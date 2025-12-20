@@ -1,0 +1,5 @@
+cellular_automaton
+cellular_automaton_cpu
+*.o
+*.obj
+
