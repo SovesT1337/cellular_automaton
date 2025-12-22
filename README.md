@@ -37,13 +37,17 @@
 
 ```
 cellular_automaton/
-├── cellular_automaton.h   # Структуры данных и интерфейсы
-├── cpu_automaton.cpp      # CPU реализация (последовательная)
-├── cuda_automaton.cu      # CUDA реализация (параллельная на GPU)
-├── main.cpp               # Бенчмарк CPU vs CUDA
-├── main_cpu.cpp           # Только CPU версия
-├── output_cpu.txt         # Пример вывода программы
-└── Makefile
+├── cellular_automaton.h    # Основные структуры и API
+├── benchmark_utils.h       # Утилиты бенчмарков
+├── test_configs.h          # Конфигурации 25 тестов
+├── benchmark_runner.h      # Класс запуска тестов
+├── cpu_automaton.cpp       # CPU реализация (последовательная)
+├── cuda_automaton.cu       # CUDA реализация (параллельная)
+├── main.cpp                # Бенчмарк CPU vs CUDA (110 строк)
+├── main_cpu.cpp            # Только CPU версия
+├── README.md               # Документация проекта
+├── REFACTORING.md          # Описание рефакторинга
+└── RESULTS_REAL.md         # Реальные результаты на RTX 3060
 ```
 
 ## Сборка и запуск
@@ -57,9 +61,25 @@ make
 make cpu_only
 ./cellular_automaton_cpu
 
-# Сохранить вывод в файл
-./cellular_automaton_cpu > results.txt
+# С измерением времени
+./run_benchmark.sh
 ```
+
+## Набор тестов
+
+Программа включает **25 разнообразных тестов** (~3 минуты выполнения):
+
+- **Случайные графы** (5 тестов): 10K-10M узлов, степень 3-15
+- **1D линии** (2 теста): до 200K ячеек, 2000-3000 шагов
+- **2D сетки** (4 теста): до 3000x1000, фон Нейман/Мур
+- **3D кубы** (3 теста): до 400x300x200, периодические/открытые
+- **4D-5D гиперкубы** (4 теста): до 80^4 и 35^5
+- **Крупномасштабные** (7 тестов): до 10M узлов
+
+Каждый тест проверяет:
+- ✅ Совпадение результатов CPU/CUDA
+- ✅ Формирование выходной последовательности
+- ✅ Измерение производительности
 
 ## N-мерные решетки
 
@@ -222,3 +242,9 @@ sudo apt-get install cuda-toolkit-13-1
 export PATH=/usr/local/cuda/bin:$PATH
 export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ```
+
+## Дополнительная документация
+
+- **RESULTS_REAL.md** - полные результаты работы на RTX 3060 с анализом
+- **REFACTORING.md** - описание архитектуры и улучшений кода
+- **Репозиторий**: https://github.com/SovesT1337/cellular_automaton
