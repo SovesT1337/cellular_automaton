@@ -5,13 +5,21 @@
  * 
  * Последовательная реализация для выполнения на центральном процессоре.
  * Используется как эталон для проверки корректности GPU версии.
+ * 
+ * ОСНОВНЫЕ ФУНКЦИИ:
+ * - generate_random_graph()  - генерация случайного графа Эрдёша-Реньи
+ * - generate_nd_grid()       - генерация N-мерной регулярной решетки
+ * - compute_cpu()            - вычисление эволюции автомата на CPU
+ * - print_*()                - утилиты вывода таблиц и графиков
  */
 
 #include "cellular_automaton.h"
 #include <chrono>
 #include <random>
-#include <cstring>
 #include <algorithm>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
 
 /**
  * Генерация случайного графа (Эрдёша-Реньи подобный)
