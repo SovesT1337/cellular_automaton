@@ -226,7 +226,7 @@ Graph generate_nd_grid(const NDGridConfig& config) {
  * @param feedback_type 0 = XOR, 1 = Majority
  */
 ComputeResult compute_cpu(const Graph& graph, const std::vector<uint8_t>& initial_state, 
-                          int steps, int feedback_type) {
+                          int steps, int feedback_type, const OutputConfig* output_cfg) {
     ComputeResult result;
     int n = graph.num_nodes;
     
@@ -239,6 +239,15 @@ ComputeResult compute_cpu(const Graph& graph, const std::vector<uint8_t>& initia
     
     // Сохраняем начальное состояние
     result.history.push_back(current);
+    
+    // Формирование выходной последовательности (если задана конфигурация)
+    if (output_cfg && !output_cfg->cells.empty()) {
+        for (int cell_idx : output_cfg->cells) {
+            if (cell_idx >= 0 && cell_idx < n) {
+                result.output_sequence.push_back(current[cell_idx]);
+            }
+        }
+    }
     
     // Замер времени с высоким разрешением
     auto start = std::chrono::high_resolution_clock::now();
@@ -278,6 +287,17 @@ ComputeResult compute_cpu(const Graph& graph, const std::vector<uint8_t>& initia
         
         // Сохраняем историю
         result.history.push_back(current);
+        
+        // Извлекаем значения для выходной последовательности
+        if (output_cfg && !output_cfg->cells.empty()) {
+            if ((step + 1) % output_cfg->extract_every_n_steps == 0) {
+                for (int cell_idx : output_cfg->cells) {
+                    if (cell_idx >= 0 && cell_idx < n) {
+                        result.output_sequence.push_back(current[cell_idx]);
+                    }
+                }
+            }
+        }
     }
     
     auto end = std::chrono::high_resolution_clock::now();
@@ -285,4 +305,72 @@ ComputeResult compute_cpu(const Graph& graph, const std::vector<uint8_t>& initia
     result.final_state = current;
     
     return result;
+}
+
+// ============================================================================
+// УТИЛИТЫ ДЛЯ КРАСИВОГО ВЫВОДА
+// ============================================================================
+
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+
+void print_table_separator(const std::vector<int>& widths) {
+    std::cout << "+";
+    for (int w : widths) {
+        std::cout << std::string(w + 2, '-') << "+";
+    }
+    std::cout << "\n";
+}
+
+void print_table_header(const std::vector<std::string>& headers, const std::vector<int>& widths) {
+    print_table_separator(widths);
+    std::cout << "|";
+    for (size_t i = 0; i < headers.size(); i++) {
+        std::cout << " " << std::left << std::setw(widths[i]) << headers[i] << " |";
+    }
+    std::cout << "\n";
+    print_table_separator(widths);
+}
+
+void print_table_row(const std::vector<std::string>& cells, const std::vector<int>& widths) {
+    std::cout << "|";
+    for (size_t i = 0; i < cells.size(); i++) {
+        std::cout << " " << std::left << std::setw(widths[i]) << cells[i] << " |";
+    }
+    std::cout << "\n";
+}
+
+void print_performance_graph(const std::vector<std::pair<std::string, double>>& cpu_times,
+                             const std::vector<std::pair<std::string, double>>& cuda_times) {
+    if (cpu_times.size() != cuda_times.size() || cpu_times.empty()) return;
+    
+    std::cout << "\n";
+    std::cout << "╔════════════════════════════════════════════════════════════════════╗\n";
+    std::cout << "║         ГРАФИК СРАВНЕНИЯ ПРОИЗВОДИТЕЛЬНОСТИ CPU vs CUDA           ║\n";
+    std::cout << "╚════════════════════════════════════════════════════════════════════╝\n\n";
+    
+    // Находим максимальное время для масштабирования
+    double max_time = 0;
+    for (const auto& p : cpu_times) {
+        if (p.second > max_time) max_time = p.second;
+    }
+    
+    const int bar_width = 50;
+    
+    for (size_t i = 0; i < cpu_times.size(); i++) {
+        std::cout << std::setw(25) << std::left << cpu_times[i].first << " │\n";
+        
+        // CPU bar
+        int cpu_len = (int)((cpu_times[i].second / max_time) * bar_width);
+        std::cout << "  CPU:  " << std::string(cpu_len, '█') << " " 
+                  << std::fixed << std::setprecision(2) << cpu_times[i].second << " мс\n";
+        
+        // CUDA bar
+        int cuda_len = (int)((cuda_times[i].second / max_time) * bar_width);
+        double speedup = cpu_times[i].second / cuda_times[i].second;
+        std::cout << "  CUDA: " << std::string(cuda_len, '█') << " " 
+                  << std::fixed << std::setprecision(2) << cuda_times[i].second 
+                  << " мс (ускорение: " << std::setprecision(1) << speedup << "x)\n\n";
+    }
 }

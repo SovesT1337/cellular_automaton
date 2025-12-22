@@ -147,7 +147,7 @@ __global__ void step_kernel_rule110(const uint8_t* current, uint8_t* next,
  * Это точнее, чем CPU таймеры, т.к. учитывает реальное время GPU.
  */
 ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initial_state, 
-                           int steps, int feedback_type) {
+                           int steps, int feedback_type, const OutputConfig* output_cfg) {
     ComputeResult result;
     int n = graph.num_nodes;
     int num_edges = graph.num_edges;
@@ -186,6 +186,15 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
     std::vector<uint8_t> host_state(n);
     result.history.push_back(initial_state);
     
+    // Формирование выходной последовательности (если задана конфигурация)
+    if (output_cfg && !output_cfg->cells.empty()) {
+        for (int cell_idx : output_cfg->cells) {
+            if (cell_idx >= 0 && cell_idx < n) {
+                result.output_sequence.push_back(initial_state[cell_idx]);
+            }
+        }
+    }
+    
     // ========================================================================
     // ШАГ 4: Создание CUDA Events для замера времени
     // ========================================================================
@@ -219,16 +228,31 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
                     d_current, d_next, d_row_ptr, d_col_idx, n);
         }
         
+        // КРИТИЧЕСКИ ВАЖНО: проверка ошибок запуска kernel
+        CUDA_CHECK(cudaGetLastError());
+        // КРИТИЧЕСКИ ВАЖНО: синхронизация для корректности результатов
+        CUDA_CHECK(cudaDeviceSynchronize());
+        
         // Обмен указателей (эффективнее чем копирование)
         uint8_t* tmp = d_current;
         d_current = d_next;
         d_next = tmp;
         
         // Копирование для сохранения истории
-        // ПРИМЕЧАНИЕ: это замедляет выполнение; для бенчмарка можно отключить
         CUDA_CHECK(cudaMemcpy(host_state.data(), d_current, 
                               n * sizeof(uint8_t), cudaMemcpyDeviceToHost));
         result.history.push_back(host_state);
+        
+        // Извлекаем значения для выходной последовательности
+        if (output_cfg && !output_cfg->cells.empty()) {
+            if ((step + 1) % output_cfg->extract_every_n_steps == 0) {
+                for (int cell_idx : output_cfg->cells) {
+                    if (cell_idx >= 0 && cell_idx < n) {
+                        result.output_sequence.push_back(host_state[cell_idx]);
+                    }
+                }
+            }
+        }
     }
     
     // ========================================================================

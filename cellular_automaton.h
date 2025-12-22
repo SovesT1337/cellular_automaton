@@ -23,6 +23,7 @@
 #include <vector>
 #include <cstdint>
 #include <numeric>
+#include <string>
 
 /**
  * Структура графа связей в CSR (Compressed Sparse Row) формате
@@ -53,7 +54,18 @@ struct Graph {
 struct ComputeResult {
     std::vector<uint8_t> final_state;              // Конечное состояние
     std::vector<std::vector<uint8_t>> history;     // История всех состояний
+    std::vector<uint8_t> output_sequence;          // Выходная последовательность
     double elapsed_ms;                              // Время вычисления в мс
+};
+
+/**
+ * Конфигурация выходной последовательности
+ */
+struct OutputConfig {
+    std::vector<int> cells;      // Индексы ячеек для выходной последовательности
+    int extract_every_n_steps;   // Извлекать каждые N шагов (1 = каждый шаг)
+    
+    OutputConfig() : extract_every_n_steps(1) {}
 };
 
 /**
@@ -156,10 +168,23 @@ Graph generate_nd_grid(const NDGridConfig& config);
 
 // CPU реализация
 ComputeResult compute_cpu(const Graph& graph, const std::vector<uint8_t>& initial_state, 
-                          int steps, int feedback_type);
+                          int steps, int feedback_type, const OutputConfig* output_cfg = nullptr);
 
 // CUDA реализация (GPU)
 ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initial_state, 
-                           int steps, int feedback_type);
+                           int steps, int feedback_type, const OutputConfig* output_cfg = nullptr);
+
+// ============================================================================
+// УТИЛИТЫ
+// ============================================================================
+
+// Красивый вывод таблицы
+void print_table_header(const std::vector<std::string>& headers, const std::vector<int>& widths);
+void print_table_row(const std::vector<std::string>& cells, const std::vector<int>& widths);
+void print_table_separator(const std::vector<int>& widths);
+
+// ASCII график производительности
+void print_performance_graph(const std::vector<std::pair<std::string, double>>& cpu_times,
+                             const std::vector<std::pair<std::string, double>>& cuda_times);
 
 #endif
