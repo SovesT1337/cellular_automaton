@@ -367,17 +367,17 @@ void print_performance_graph(const std::vector<std::pair<std::string, double>>& 
     const int bar_width = 50;
     
     for (size_t i = 0; i < cpu_times.size(); i++) {
-        std::cout << std::setw(25) << std::left << cpu_times[i].first << " │\n";
+        std::cout << std::setw(25) << std::left << cpu_times[i].first << " |\n";
         
         // CPU bar
         int cpu_len = (int)((cpu_times[i].second / max_time) * bar_width);
-        std::cout << "  CPU:  " << std::string(cpu_len, '█') << " " 
+        std::cout << "  CPU:  " << std::string(cpu_len, '#') << " " 
                   << std::fixed << std::setprecision(2) << cpu_times[i].second << " мс\n";
         
         // CUDA bar
         int cuda_len = (int)((cuda_times[i].second / max_time) * bar_width);
         double speedup = cpu_times[i].second / cuda_times[i].second;
-        std::cout << "  CUDA: " << std::string(cuda_len, '█') << " " 
+        std::cout << "  CUDA: " << std::string(cuda_len, '#') << " " 
                   << std::fixed << std::setprecision(2) << cuda_times[i].second 
                   << " мс (ускорение: " << std::setprecision(1) << speedup << "x)\n\n";
     }

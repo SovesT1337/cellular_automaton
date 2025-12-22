@@ -137,14 +137,16 @@ __global__ void step_kernel_rule110(const uint8_t* current, uint8_t* next,
  * 
  * ЭТАПЫ:
  * 1. Выделение памяти на GPU (cudaMalloc)
- * 2. Копирование данных на GPU (cudaMemcpy Host -> Device)
- * 3. Запуск kernel для каждого шага
- * 4. Копирование результатов обратно (cudaMemcpy Device -> Host)
- * 5. Освобождение памяти GPU (cudaFree)
+ * 2. НАЧАЛО ЗАМЕРА ВРЕМЕНИ (включая копирование!)
+ * 3. Копирование данных на GPU (cudaMemcpy Host -> Device)
+ * 4. Запуск kernel для каждого шага
+ * 5. Копирование результатов обратно (cudaMemcpy Device -> Host)
+ * 6. КОНЕЦ ЗАМЕРА ВРЕМЕНИ
+ * 7. Освобождение памяти GPU (cudaFree)
  * 
  * ЗАМЕР ВРЕМЕНИ:
  * Используются CUDA Events - аппаратные таймеры GPU.
- * Это точнее, чем CPU таймеры, т.к. учитывает реальное время GPU.
+ * Замер включает время копирования данных CPU↔GPU (реальная стоимость CUDA).
  */
 ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initial_state, 
                            int steps, int feedback_type, const OutputConfig* output_cfg) {
@@ -165,7 +167,18 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
     CUDA_CHECK(cudaMalloc(&d_col_idx, num_edges * sizeof(int)));
     
     // ========================================================================
-    // ШАГ 2: Копирование данных на GPU
+    // ШАГ 2: Создание CUDA Events для замера времени
+    // ========================================================================
+    // ВАЖНО: Замер начинается ДО копирования данных, чтобы учесть
+    // время передачи данных между CPU и GPU (реальная стоимость CUDA)
+    cudaEvent_t start_event, stop_event;
+    CUDA_CHECK(cudaEventCreate(&start_event));
+    CUDA_CHECK(cudaEventCreate(&stop_event));
+    
+    CUDA_CHECK(cudaEventRecord(start_event));  // Начало замера (включая копирование)
+    
+    // ========================================================================
+    // ШАГ 3: Копирование данных на GPU
     // ========================================================================
     // cudaMemcpyHostToDevice: CPU память -> GPU память
     CUDA_CHECK(cudaMemcpy(d_current, initial_state.data(), 
@@ -176,7 +189,7 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
                           num_edges * sizeof(int), cudaMemcpyHostToDevice));
     
     // ========================================================================
-    // ШАГ 3: Конфигурация запуска
+    // ШАГ 4: Конфигурация запуска
     // ========================================================================
     // block_size: количество потоков в блоке (256 - стандартное значение)
     // grid_size: количество блоков (округление вверх)
@@ -194,15 +207,6 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
             }
         }
     }
-    
-    // ========================================================================
-    // ШАГ 4: Создание CUDA Events для замера времени
-    // ========================================================================
-    cudaEvent_t start_event, stop_event;
-    CUDA_CHECK(cudaEventCreate(&start_event));
-    CUDA_CHECK(cudaEventCreate(&stop_event));
-    
-    CUDA_CHECK(cudaEventRecord(start_event));  // Начало замера
     
     // ========================================================================
     // ШАГ 5: Основной цикл симуляции
@@ -256,7 +260,14 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
     }
     
     // ========================================================================
-    // ШАГ 6: Завершение замера времени
+    // ШАГ 6: Копирование финального результата
+    // ========================================================================
+    CUDA_CHECK(cudaMemcpy(host_state.data(), d_current, 
+                          n * sizeof(uint8_t), cudaMemcpyDeviceToHost));
+    result.final_state = host_state;
+    
+    // ========================================================================
+    // ШАГ 7: Завершение замера времени (включая все копирования)
     // ========================================================================
     CUDA_CHECK(cudaEventRecord(stop_event));
     CUDA_CHECK(cudaEventSynchronize(stop_event));  // Ожидание завершения GPU
@@ -264,13 +275,6 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
     float elapsed_ms;
     CUDA_CHECK(cudaEventElapsedTime(&elapsed_ms, start_event, stop_event));
     result.elapsed_ms = elapsed_ms;
-    
-    // ========================================================================
-    // ШАГ 7: Копирование финального результата
-    // ========================================================================
-    CUDA_CHECK(cudaMemcpy(host_state.data(), d_current, 
-                          n * sizeof(uint8_t), cudaMemcpyDeviceToHost));
-    result.final_state = host_state;
     
     // ========================================================================
     // ШАГ 8: Освобождение ресурсов
