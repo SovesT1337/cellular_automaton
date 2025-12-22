@@ -1,8 +1,9 @@
 # Makefile for Cellular Automaton CPU/CUDA benchmark
 
-NVCC = nvcc
+NVCC = /usr/local/cuda-13.1/bin/nvcc
 CXX = g++
-NVCC_FLAGS = -O3 -std=c++17
+# RTX 3060 compute capability 8.6 (Ampere)
+NVCC_FLAGS = -O3 -std=c++17 -arch=sm_86 --ptxas-options=-v
 CXX_FLAGS = -O3 -std=c++17
 
 TARGET = cellular_automaton
