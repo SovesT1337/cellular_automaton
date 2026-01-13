@@ -1,114 +1,170 @@
 /**
- * ============================================================================
- * БЕНЧМАРК: CPU vs CUDA для клеточных автоматов
- * ============================================================================
- * 
- * Сравнение производительности CPU и CUDA реализаций обобщенного
- * клеточного автомата на различных типах графов и топологий.
+ * Обобщенный клеточный автомат
+ * Вычисление выходной последовательности по заданному графу и функции обратной связи
  */
 
-#include "benchmark_runner.h"
-#include "test_configs.h"
+#include "cellular_automaton.h"
 #include <iostream>
+#include <iomanip>
+#include <random>
+#include <vector>
+#include <fstream>
 
-void print_banner() {
-    std::cout << "\n";
-    std::cout << "╔══════════════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║                                                                      ║\n";
-    std::cout << "║         ОБОБЩЕННЫЙ КЛЕТОЧНЫЙ АВТОМАТ - CPU vs CUDA БЕНЧМАРК         ║\n";
-    std::cout << "║                                                                      ║\n";
-    std::cout << "║  Вычисление выходной последовательности по графу и функции          ║\n";
-    std::cout << "║                     обратной связи                                   ║\n";
-    std::cout << "║                                                                      ║\n";
-    std::cout << "║                Время выполнения: ~3 минуты                           ║\n";
-    std::cout << "║                                                                      ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════════════════╝\n";
+// Генерация случайного начального состояния
+std::vector<uint8_t> random_state(int n, unsigned int seed = 123) {
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<int> dist(0, 1);
+    std::vector<uint8_t> state(n);
+    for (int i = 0; i < n; i++) {
+        state[i] = dist(rng);
+    }
+    return state;
 }
 
-void print_conclusions() {
-    std::cout << "\n\n";
-    std::cout << "╔══════════════════════════════════════════════════════════════════════╗\n";
-    std::cout << "║                              ВЫВОДЫ                                  ║\n";
-    std::cout << "╚══════════════════════════════════════════════════════════════════════╝\n";
-    std::cout << "\n";
-    std::cout << "1. CUDA эффективна для графов >10K узлов, ускорение растет с размером.\n\n";
-    std::cout << "2. Степень соседства влияет на производительность:\n";
-    std::cout << "   - Малая степень (3-4): высокое ускорение на CUDA\n";
-    std::cout << "   - Высокая степень (15+): больше нагрузка на память\n\n";
-    std::cout << "3. Окрестность Мура (8 соседей в 2D, 26 в 3D) требует больше памяти,\n";
-    std::cout << "   но CUDA справляется лучше благодаря параллелизму.\n\n";
-    std::cout << "4. Периодические границы (тор) не влияют на производительность,\n";
-    std::cout << "   только на топологию.\n\n";
-    std::cout << "5. Высокоразмерные решетки (4D, 5D) показывают хорошее ускорение\n";
-    std::cout << "   на CUDA благодаря регулярной структуре.\n\n";
-    std::cout << "6. Выходная последовательность формируется корректно для всех\n";
-    std::cout << "   типов графов с полным совпадением CPU/CUDA результатов.\n\n";
+// Структура для хранения результатов бенчмарка
+struct BenchmarkResult {
+    int num_nodes;
+    int num_edges;
+    int steps;
+    int feedback_type;
+    const char* feedback_name;
+    double cpu_time_ms;
+    double cuda_time_ms;
+    double speedup;
+    bool results_match;
+};
+
+// Функция для тестирования на графе определенного размера
+BenchmarkResult benchmark_graph_size(int num_nodes, int avg_degree, int steps, 
+                                      int feedback_type, const char* feedback_name) {
+    BenchmarkResult result;
+    result.num_nodes = num_nodes;
+    result.steps = steps;
+    result.feedback_type = feedback_type;
+    result.feedback_name = feedback_name;
+    
+    // Генерация графа
+    Graph graph = generate_random_graph(num_nodes, avg_degree, 42);
+    result.num_edges = graph.num_edges;
+    
+    // Начальное состояние
+    auto initial = random_state(num_nodes);
+    
+    // Конфигурация выходной последовательности
+    OutputConfig output_cfg;
+    output_cfg.cells = {0, 1, 2, 3, 4};
+    output_cfg.extract_every_n_steps = std::max(1, steps / 10);
+    
+    // Вычисление на CPU
+    auto result_cpu = compute_cpu(graph, initial, steps, feedback_type, &output_cfg);
+    result.cpu_time_ms = result_cpu.elapsed_ms;
+    
+    #ifndef NO_CUDA
+    // Вычисление на CUDA
+    auto result_cuda = compute_cuda(graph, initial, steps, feedback_type, &output_cfg);
+    result.cuda_time_ms = result_cuda.elapsed_ms;
+    
+    // Проверка корректности
+    result.results_match = (result_cpu.output_sequence == result_cuda.output_sequence);
+    result.speedup = result.cpu_time_ms / result.cuda_time_ms;
+    #else
+    result.cuda_time_ms = 0.0;
+    result.speedup = 0.0;
+    result.results_match = false;
+    #endif
+    
+    return result;
 }
 
-int main(int argc, char** argv) {
-    print_banner();
-    
-    BenchmarkRunner runner(123);
-    
-    // ========================================================================
-    // СЛУЧАЙНЫЕ ГРАФЫ
-    // ========================================================================
-    print_category_header("СЛУЧАЙНЫЕ ГРАФЫ");
-    for (const auto& test : get_random_graph_tests()) {
-        runner.run_random_graph_test(test);
+// Сохранение результатов в CSV файл для построения графиков
+void save_results_csv(const std::vector<BenchmarkResult>& results, const char* filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Ошибка открытия файла " << filename << "\n";
+        return;
     }
     
-    // ========================================================================
-    // 1D ЛИНЕЙНЫЕ АВТОМАТЫ
-    // ========================================================================
-    print_category_header("1D ЛИНЕЙНЫЕ АВТОМАТЫ");
-    for (const auto& test : get_1d_tests()) {
-        runner.run_grid_test(test);
+    // Заголовок CSV
+    file << "num_nodes,num_edges,avg_degree,steps,feedback_type,feedback_name,"
+         << "cpu_time_ms,cuda_time_ms,speedup,results_match\n";
+    
+    // Данные
+    for (const auto& r : results) {
+        double avg_degree = (double)r.num_edges / r.num_nodes;
+        file << r.num_nodes << ","
+             << r.num_edges << ","
+             << std::fixed << std::setprecision(2) << avg_degree << ","
+             << r.steps << ","
+             << r.feedback_type << ","
+             << r.feedback_name << ","
+             << std::fixed << std::setprecision(6) << r.cpu_time_ms << ","
+             << r.cuda_time_ms << ","
+             << r.speedup << ","
+             << (r.results_match ? "true" : "false") << "\n";
     }
     
-    // ========================================================================
-    // 2D СЕТКИ
-    // ========================================================================
-    print_category_header("2D СЕТКИ");
-    for (const auto& test : get_2d_tests()) {
-        runner.run_grid_test(test);
+    file.close();
+}
+
+int main() {
+    std::vector<BenchmarkResult> all_results;
+    
+    try {
+        // Параметры
+        int avg_degree = 5;
+        int steps = 100;
+        
+        // Очень малые графы (50 - 500 узлов)
+        std::vector<int> tiny_sizes = {50, 75, 100, 150, 200, 250, 300, 400, 500};
+        for (int size : tiny_sizes) {
+            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
+            all_results.push_back(result);
+        }
+        
+        // Малые графы (600 - 5K узлов) - промежуточные точки
+        std::vector<int> small_sizes = {600, 800, 1000, 1500, 2000, 2500, 3000, 4000, 5000};
+        for (int size : small_sizes) {
+            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
+            all_results.push_back(result);
+        }
+        
+        // Средние графы (6K - 20K узлов)
+        std::vector<int> medium_sizes = {6000, 7000, 8000, 9000, 10000, 12000, 15000, 18000, 20000};
+        for (int size : medium_sizes) {
+            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
+            all_results.push_back(result);
+        }
+        
+        // Большие графы (25K - 100K узлов)
+        std::vector<int> large_sizes = {25000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000};
+        for (int size : large_sizes) {
+            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
+            all_results.push_back(result);
+        }
+        
+        // Очень большие графы (120K - 300K узлов)
+        std::vector<int> xlarge_sizes = {120000, 150000, 200000, 250000, 300000};
+        for (int size : xlarge_sizes) {
+            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
+            all_results.push_back(result);
+        }
+        
+        // Тестирование с Majority функцией
+        std::vector<int> majority_sizes = {100, 200, 500, 750, 1000, 1500, 2000, 3000, 5000, 
+                                           7000, 10000, 15000, 20000, 30000, 50000, 70000, 
+                                           100000, 150000, 200000, 300000};
+        for (int size : majority_sizes) {
+            auto result = benchmark_graph_size(size, avg_degree, steps, 1, "MAJORITY");
+            all_results.push_back(result);
+        }
+        
+        // Сохранение результатов в CSV
+        save_results_csv(all_results, "benchmark_results.csv");
+        
+    } catch (const std::exception& e) {
+        std::cerr << "\n✗ Ошибка: " << e.what() << "\n";
+        return 1;
     }
-    
-    // ========================================================================
-    // 3D ОБЪЕМНЫЕ РЕШЕТКИ
-    // ========================================================================
-    print_category_header("3D ОБЪЕМНЫЕ РЕШЕТКИ");
-    for (const auto& test : get_3d_tests()) {
-        runner.run_grid_test(test);
-    }
-    
-    // ========================================================================
-    // ВЫСОКОРАЗМЕРНЫЕ РЕШЕТКИ
-    // ========================================================================
-    print_category_header("ВЫСОКОРАЗМЕРНЫЕ РЕШЕТКИ");
-    for (const auto& test : get_high_dim_tests()) {
-        runner.run_grid_test(test);
-    }
-    
-    // ========================================================================
-    // КРУПНОМАСШТАБНЫЕ ТЕСТЫ
-    // ========================================================================
-    print_category_header("КРУПНОМАСШТАБНЫЕ ТЕСТЫ");
-    
-    for (const auto& test : get_large_scale_graph_tests()) {
-        runner.run_random_graph_test(test);
-    }
-    
-    for (const auto& test : get_large_scale_grid_tests()) {
-        runner.run_grid_test(test);
-    }
-    
-    // ========================================================================
-    // ИТОГИ
-    // ========================================================================
-    runner.print_summary();
-    runner.print_performance_chart();
-    print_conclusions();
     
     return 0;
 }

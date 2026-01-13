@@ -1,5 +1,17 @@
+# Исполняемые файлы
 cellular_automaton
 cellular_automaton_cpu
+
+# Объектные файлы
 *.o
 *.obj
 
+# Python виртуальное окружение
+venv/
+__pycache__/
+*.pyc
+
+# Результаты бенчмарков
+benchmark_results.csv
+benchmark_plots.png
+benchmark_heatmap.png
