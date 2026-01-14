@@ -26,7 +26,7 @@
  * 1. Для каждого узла i:
  *    a) Генерируем случайную степень (от 1 до 2*avg_degree-1)
  *    b) Для каждого ребра выбираем случайного соседа
- *    c) Исключаем петли (ребра узла к самому себе)
+ *    c) Исключаем петли (рёбра узла к самому себе)
  * 2. Конвертируем в формат CSR для эффективного хранения
  * 
  * Особенности:
@@ -189,15 +189,10 @@ ComputeResult compute_cpu(const Graph& graph, const std::vector<uint8_t>& initia
              *   0 = XOR (исключающее ИЛИ всех соседей)
              *   1 = MAJORITY (правило большинства)
              */
-            switch (feedback_type) {
-                case 0:
-                    next[i] = feedback_xor(neighbors_buf.data(), degree);
-                    break;
-                case 1:
-                    next[i] = feedback_majority(neighbors_buf.data(), degree);
-                    break;
-                default:
-                    next[i] = feedback_xor(neighbors_buf.data(), degree);
+            if (feedback_type == 1) {
+                next[i] = feedback_majority(neighbors_buf.data(), degree);
+            } else {
+                next[i] = feedback_xor(neighbors_buf.data(), degree);
             }
         }
         

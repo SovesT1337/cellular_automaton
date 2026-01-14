@@ -105,7 +105,7 @@ struct BenchmarkResult {
  */
 BenchmarkResult benchmark_graph_size(int num_nodes, int avg_degree, int steps, 
                                       int feedback_type, const char* feedback_name) {
-    BenchmarkResult result;
+    BenchmarkResult result = {};
     result.num_nodes = num_nodes;
     result.steps = steps;
     result.feedback_type = feedback_type;
@@ -172,6 +172,31 @@ BenchmarkResult benchmark_graph_size(int num_nodes, int avg_degree, int steps,
     #endif
     
     return result;
+}
+
+// ====================================================================
+// ЗАПУСК СЕРИИ ТЕСТОВ
+// ====================================================================
+/**
+ * Вспомогательная функция для устранения дублирования кода.
+ * Запускает бенчмарк для списка размеров графов с одинаковыми параметрами.
+ * 
+ * Параметры:
+ * - results: вектор для добавления результатов
+ * - sizes: список размеров графов для тестирования
+ * - avg_degree: средняя степень узла
+ * - steps: количество шагов симуляции
+ * - feedback_type: тип функции обратной связи
+ * - feedback_name: имя функции
+ */
+void run_benchmarks(std::vector<BenchmarkResult>& results, 
+                    const std::vector<int>& sizes, 
+                    int avg_degree, int steps, 
+                    int feedback_type, const char* feedback_name) {
+    for (int size : sizes) {
+        auto result = benchmark_graph_size(size, avg_degree, steps, feedback_type, feedback_name);
+        results.push_back(result);
+    }
 }
 
 // ====================================================================
@@ -295,92 +320,49 @@ int main() {
          * Эти параметры фиксированы для всех тестов, чтобы изолировать
          * влияние размера графа на производительность.
          */
-        int avg_degree = 5;
-        int steps = 100;
+        const int avg_degree = 5;
+        const int steps = 100;
         
         // ====================================================================
-        // ТЕСТИРОВАНИЕ ОЧЕНЬ МАЛЫХ ГРАФОВ (50-500 узлов)
+        // ОПРЕДЕЛЕНИЕ ТЕСТОВЫХ РАЗМЕРОВ ГРАФОВ
         // ====================================================================
         /**
-         * Цель: понять поведение на малых размерах
-         * Ожидание: CPU быстрее из-за накладных расходов CUDA
-         * (копирование данных GPU ↔ CPU)
+         * Разбиваем диапазон размеров на категории для систематического
+         * тестирования от малых до очень больших графов.
          */
         std::vector<int> tiny_sizes = {50, 75, 100, 150, 200, 250, 300, 400, 500};
-        for (int size : tiny_sizes) {
-            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
-            all_results.push_back(result);
-        }
-        
-        // ====================================================================
-        // ТЕСТИРОВАНИЕ МАЛЫХ ГРАФОВ (600-5K узлов)
-        // ====================================================================
-        /**
-         * Цель: найти "точку перелома"
-         * Ожидание: на каком-то размере CUDA начинает обгонять CPU
-         */
         std::vector<int> small_sizes = {600, 800, 1000, 1500, 2000, 2500, 3000, 4000, 5000};
-        for (int size : small_sizes) {
-            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
-            all_results.push_back(result);
-        }
-        
-        // ====================================================================
-        // ТЕСТИРОВАНИЕ СРЕДНИХ ГРАФОВ (6K-20K узлов)
-        // ====================================================================
-        /**
-         * Цель: измерить преимущество CUDA на типичных размерах
-         * Ожидание: CUDA значительно быстрее (ускорение 5-20x)
-         */
         std::vector<int> medium_sizes = {6000, 7000, 8000, 9000, 10000, 12000, 15000, 18000, 20000};
-        for (int size : medium_sizes) {
-            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
-            all_results.push_back(result);
-        }
-        
-        // ====================================================================
-        // ТЕСТИРОВАНИЕ БОЛЬШИХ ГРАФОВ (25K-100K узлов)
-        // ====================================================================
-        /**
-         * Цель: показать масштабируемость CUDA
-         * Ожидание: максимальное ускорение (20-100x)
-         */
         std::vector<int> large_sizes = {25000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000};
-        for (int size : large_sizes) {
-            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
-            all_results.push_back(result);
-        }
+        std::vector<int> xlarge_sizes = {120000, 150000, 200000, 250000, 300000};
+        std::vector<int> majority_sizes = {100, 200, 500, 750, 1000, 1500, 2000, 3000, 5000, 
+                                           7000, 10000, 15000, 20000, 30000, 50000, 70000, 
+                                           100000, 150000, 200000, 300000};
         
         // ====================================================================
-        // ТЕСТИРОВАНИЕ ОЧЕНЬ БОЛЬШИХ ГРАФОВ (120K-300K узлов)
+        // ТЕСТИРОВАНИЕ С ФУНКЦИЕЙ XOR
         // ====================================================================
         /**
-         * Цель: стресс-тест, проверка пределов
-         * Внимание: может потребовать много памяти GPU!
+         * Цель: измерить производительность для линейной функции XOR.
+         * Ожидание: найти "точку перелома" где CUDA становится быстрее CPU.
          */
-        std::vector<int> xlarge_sizes = {120000, 150000, 200000, 250000, 300000};
-        for (int size : xlarge_sizes) {
-            auto result = benchmark_graph_size(size, avg_degree, steps, 0, "XOR");
-            all_results.push_back(result);
-        }
+        run_benchmarks(all_results, tiny_sizes, avg_degree, steps, 0, "XOR");
+        run_benchmarks(all_results, small_sizes, avg_degree, steps, 0, "XOR");
+        run_benchmarks(all_results, medium_sizes, avg_degree, steps, 0, "XOR");
+        run_benchmarks(all_results, large_sizes, avg_degree, steps, 0, "XOR");
+        run_benchmarks(all_results, xlarge_sizes, avg_degree, steps, 0, "XOR");
         
         // ====================================================================
         // ТЕСТИРОВАНИЕ С ФУНКЦИЕЙ MAJORITY
         // ====================================================================
         /**
-         * Цель: проверить, что выводы справедливы для другой функции
-         * Функция MAJORITY более вычислительно сложная (сложение вместо XOR)
+         * Цель: проверить, что выводы справедливы для нелинейной функции.
+         * Функция MAJORITY более вычислительно сложная (сложение вместо XOR).
          * 
          * Ожидание: аналогичное поведение, возможно немного другие
-         * пороговые значения для "точки перелома"
+         * пороговые значения для "точки перелома".
          */
-        std::vector<int> majority_sizes = {100, 200, 500, 750, 1000, 1500, 2000, 3000, 5000, 
-                                           7000, 10000, 15000, 20000, 30000, 50000, 70000, 
-                                           100000, 150000, 200000, 300000};
-        for (int size : majority_sizes) {
-            auto result = benchmark_graph_size(size, avg_degree, steps, 1, "MAJORITY");
-            all_results.push_back(result);
-        }
+        run_benchmarks(all_results, majority_sizes, avg_degree, steps, 1, "MAJORITY");
         
         // ====================================================================
         // СОХРАНЕНИЕ РЕЗУЛЬТАТОВ

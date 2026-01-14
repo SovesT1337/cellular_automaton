@@ -301,18 +301,10 @@ ComputeResult compute_cuda(const Graph& graph, const std::vector<uint8_t>& initi
          * Запуск kernel асинхронный: CPU продолжает выполнение,
          * пока GPU работает. Нужен cudaDeviceSynchronize() для ожидания.
          */
-        switch (feedback_type) {
-            case 0:
-                step_kernel_xor<<<grid_size, block_size>>>(
-                    d_current, d_next, d_row_ptr, d_col_idx, n);
-                break;
-            case 1:
-                step_kernel_majority<<<grid_size, block_size>>>(
-                    d_current, d_next, d_row_ptr, d_col_idx, n);
-                break;
-            default:
-                step_kernel_xor<<<grid_size, block_size>>>(
-                    d_current, d_next, d_row_ptr, d_col_idx, n);
+        if (feedback_type == 1) {
+            step_kernel_majority<<<grid_size, block_size>>>(d_current, d_next, d_row_ptr, d_col_idx, n);
+        } else {
+            step_kernel_xor<<<grid_size, block_size>>>(d_current, d_next, d_row_ptr, d_col_idx, n);
         }
         
         // Проверка на ошибки во время запуска kernel
